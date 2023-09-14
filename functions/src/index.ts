@@ -245,7 +245,10 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
         return message;
       })
       .catch((error) => {
-        Sentry.captureException(error);
+        Sentry.captureException(error,{
+          level: 'error',
+          extra: data
+        });
         const message: StkResponseBody = {
           checkoutRequestId: "",
           message: "Error Please Check Your Phone Number And Try Again",
