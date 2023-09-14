@@ -105,7 +105,12 @@ export const initiatestkpush = functions.https.onRequest(async (request, respons
 });
 export const mpesaCallback = functions.https.onRequest(async (request, response) => {
   cors(request, response, async () => {
+    const transactions = Sentry.startTransaction({
+      name: 'mpesaCallback',
+      op: 'mpesaCallback'
+    })
     try {
+      
       const data: IMpesacallback = request.body;
       if (data?.Body?.stkCallback?.ResultCode === 0) {
         const options = {
@@ -123,10 +128,13 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
-          }
-          console.log(response.body);
+          }          
         });
+        transactions.finish()
       } else {
+        transactions.setHttpStatus(400)
+        transactions.setData('response',data?.Body?.stkCallback)
+        transactions.finish()
         Sentry.captureMessage(JSON.stringify(data?.Body?.stkCallback), "log");
         const options = {
           "method": "POST",
@@ -144,12 +152,12 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
-          }
-          console.log(response.body);
+          }          
         });
       }
     } catch (error) {
       Sentry.captureException(error,{level: 'fatal'});
+      transactions.setHttpStatus(500)
       const options = {
         "method": "POST",
         "url": "https://locatestudent.com/meet/api/api.php",
