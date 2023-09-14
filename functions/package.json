@@ -16,6 +16,8 @@
   },
   "main": "lib/index.js",
   "dependencies": {
+    "@sentry/node": "^7.69.0",
+    "@sentry/profiling-node": "^1.2.1",
     "axios": "^0.27.2",
     "cors": "^2.8.5",
     "firebase-admin": "^10.0.2",

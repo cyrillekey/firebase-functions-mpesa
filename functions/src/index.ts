@@ -10,10 +10,10 @@ import httpRequest from "request";
 const cors = require("cors")({origin: true});
 // You can also use CommonJS `require('@sentry/node')` instead of `import`
 import * as Sentry from "@sentry/node";
-import { ProfilingIntegration } from "@sentry/profiling-node";
+import {ProfilingIntegration} from "@sentry/profiling-node";
 
 Sentry.init({
-  dsn: 'https://d8fe0bb12056a5c0e78210df589f26b3@o4504167984136192.ingest.sentry.io/4505877489057792',
+  dsn: "https://d8fe0bb12056a5c0e78210df589f26b3@o4504167984136192.ingest.sentry.io/4505877489057792",
   integrations: [
     new ProfilingIntegration(),
   ],
@@ -73,7 +73,6 @@ export const initiatestkpush = functions.https.onRequest(async (request, respons
             phone: phone,
             amount: amount,
             type: type,
-  
           };
           const resp: StkResponseBody = await initiatePush(data);
           response.send(resp);
@@ -98,9 +97,9 @@ export const initiatestkpush = functions.https.onRequest(async (request, respons
         message: "Invalid Payment Method! Payment Method Can Only Be card or mpesa",
         status: "Error",
         checkoutRequestId: "",
-      }
-      Sentry.captureException(error)
-      response.send(resp)
+      };
+      Sentry.captureException(error);
+      response.send(resp);
     }
   });
 });
@@ -121,11 +120,14 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
           },
         };
         httpRequest(options, function(error:any, response:any) {
-          if (error) throw new Error(error);
+          if (error) {
+            Sentry.captureException(error);
+            throw new Error(error);
+          }
           console.log(response.body);
         });
       } else {
-        Sentry.captureMessage(JSON.stringify(data?.Body?.stkCallback),'log');
+        Sentry.captureMessage(JSON.stringify(data?.Body?.stkCallback), "log");
         const options = {
           "method": "POST",
           "url": "https://locatestudent.com/meet/api/api.php",
@@ -135,16 +137,19 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
             "paymentStatus": "fail",
             "transId": data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
             "date": new Date().toDateString(),
-            "message": data?.Body?.stkCallback?.ResultDesc
+            "message": data?.Body?.stkCallback?.ResultDesc,
           },
         };
         httpRequest(options, function(error:any, response:any) {
-          if (error) throw new Error(error);
+          if (error) {
+            Sentry.captureException(error);
+            throw new Error(error);
+          }
           console.log(response.body);
         });
       }
     } catch (error) {
-      Sentry.captureException(error)
+      Sentry.captureException(error);
       const options = {
         "method": "POST",
         "url": "https://locatestudent.com/meet/api/api.php",
@@ -225,7 +230,7 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
       return message;
     })
     .catch((error) => {
-      Sentry.captureException(error)
+      Sentry.captureException(error);
       const message: StkResponseBody = {
         checkoutRequestId: "",
         message: "Error Please Check Your Phone Number And Try Again",
