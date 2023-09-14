@@ -2,15 +2,15 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import fetch from "node-fetch";
-import axios, {AxiosResponse} from "axios";
+import axios, { AxiosResponse } from "axios";
 import moment from "moment";
 import httpRequest from "request";
 
 /* eslist-disable */
-const cors = require("cors")({origin: true});
+const cors = require("cors")({ origin: true });
 // You can also use CommonJS `require('@sentry/node')` instead of `import`
 import * as Sentry from "@sentry/node";
-import {ProfilingIntegration} from "@sentry/profiling-node";
+import { ProfilingIntegration } from "@sentry/profiling-node";
 
 Sentry.init({
   dsn: "https://d8fe0bb12056a5c0e78210df589f26b3@o4504167984136192.ingest.sentry.io/4505877489057792",
@@ -98,7 +98,7 @@ export const initiatestkpush = functions.https.onRequest(async (request, respons
         status: "Error",
         checkoutRequestId: "",
       };
-      Sentry.captureException(error, {level: "fatal"});
+      Sentry.captureException(error, { level: "fatal" });
       response.send(resp);
     }
   });
@@ -124,7 +124,7 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
             "date": new Date().toDateString(),
           },
         };
-        httpRequest(options, function(error:any, response:any) {
+        httpRequest(options, function (error: any, response: any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
@@ -148,7 +148,7 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
             "message": data?.Body?.stkCallback?.ResultDesc,
           },
         };
-        httpRequest(options, function(error:any, response:any) {
+        httpRequest(options, function (error: any, response: any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
@@ -156,7 +156,7 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
         });
       }
     } catch (error) {
-      Sentry.captureException(error, {level: "fatal"});
+      Sentry.captureException(error, { level: "fatal" });
       transactions.setHttpStatus(500);
       const options = {
         "method": "POST",
@@ -169,7 +169,7 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
           "date": new Date().toDateString(),
         },
       };
-      httpRequest(options, function(error:any, response:any) {
+      httpRequest(options, function (error: any, response: any) {
         if (error) {
           Sentry.captureException(error, {
             level: "error",
@@ -182,7 +182,7 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
       });
     }
   });
-  response.send({success: true});
+  response.send({ success: true });
 });
 const getAuth = async (): Promise<string> => {
   const token: string =
@@ -195,64 +195,73 @@ const getAuth = async (): Promise<string> => {
     },
   };
   return axios(config)
-    .then(function(result: AxiosResponse) {
+    .then(function (result: AxiosResponse) {
       return result.data["access_token"];
     })
-    .catch(function() {
+    .catch(function () {
       return "0";
     });
 };
 const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
-  let resp: StkResponse = {
-    ResponseDescription: "",
-    MerchantRequestID: undefined,
-    CheckoutRequestID: undefined,
-    ResponseCode: undefined,
-    CustomerMessage: undefined,
-  };
-  console.log(data);
-  const timestamp: string = moment().format("YYYYMMDDhhmmss").toString();
-  const password: string = btoa(`${process.env.MPESA_SHORT_CODE}${process.env.PASSKEY}${timestamp}`);
-  return await fetch("https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${data.token}`,
-    },
-    body: JSON.stringify({
-      "BusinessShortCode": Number(process.env.MPESA_SHORT_CODE),
-      "Password": password,
-      "Timestamp": timestamp,
-      "TransactionType": "CustomerBuyGoodsOnline",
-      "Amount": Number(data.amount),
-      "PartyA": parseInt(formatPhoneNumber(data.phone).trim()),
-      "PartyB": 9652927,
-      "PhoneNumber": parseInt(formatPhoneNumber(data.phone).trim()),
-      "CallBackURL": process.env.CALLBACK_URL,
-      "AccountReference": "CompanyXLTD",
-      "TransactionDesc": "Payment of X",
-    }),
-  })
-    .then((response) => response.json())
-    .then((result) => {
-      resp = result as StkResponse;
-      console.log(result);
-      const message: StkResponseBody = {
-        checkoutRequestId: resp.CheckoutRequestID,
-        message: resp?.CustomerMessage ?? "Error Please Try Again!",
-        status: resp.ResponseCode ?? "1",
-      };
-      return message;
+  try {
+    let resp: StkResponse = {
+      ResponseDescription: "",
+      MerchantRequestID: undefined,
+      CheckoutRequestID: undefined,
+      ResponseCode: undefined,
+      CustomerMessage: undefined,
+    };
+    const timestamp: string = moment().format("YYYYMMDDhhmmss").toString();
+    const password: string = btoa(`${process.env.MPESA_SHORT_CODE}${process.env.PASSKEY}${timestamp}`);
+    return await fetch("https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${data.token}`,
+      },
+      body: JSON.stringify({
+        "BusinessShortCode": Number(process.env.MPESA_SHORT_CODE),
+        "Password": password,
+        "Timestamp": timestamp,
+        "TransactionType": "CustomerBuyGoodsOnline",
+        "Amount": Number(data.amount),
+        "PartyA": parseInt(formatPhoneNumber(data.phone).trim()),
+        "PartyB": 9652927,
+        "PhoneNumber": parseInt(formatPhoneNumber(data.phone).trim()),
+        "CallBackURL": process.env.CALLBACK_URL,
+        "AccountReference": "CompanyXLTD",
+        "TransactionDesc": "Payment of X",
+      }),
     })
-    .catch((error) => {
-      Sentry.captureException(error);
-      const message: StkResponseBody = {
-        checkoutRequestId: "",
-        message: "Error Please Check Your Phone Number And Try Again",
-        status: "1",
-      };
-      return message;
-    });
+      .then((response) => response.json())
+      .then((result) => {
+        resp = result as StkResponse;
+        console.log(result);
+        const message: StkResponseBody = {
+          checkoutRequestId: resp.CheckoutRequestID,
+          message: resp?.CustomerMessage ?? "Error Please Try Again!",
+          status: resp.ResponseCode ?? "1",
+        };
+        return message;
+      })
+      .catch((error) => {
+        Sentry.captureException(error);
+        const message: StkResponseBody = {
+          checkoutRequestId: "",
+          message: "Error Please Check Your Phone Number And Try Again",
+          status: "1",
+        };
+        return message;
+      });
+  } catch (error) {
+    Sentry.captureException(error);
+    const message: StkResponseBody = {
+      checkoutRequestId: "",
+      message: "Error Please Check Your Phone Number And Try Again",
+      status: "1",
+    };
+    return message;
+  }
 };
 
 const formatPhoneNumber = (phone = ""): string => {

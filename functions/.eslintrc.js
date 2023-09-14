@@ -30,5 +30,8 @@ module.exports = {
     "indent": 0,
     "max-len": 0,
     "@typescript-eslint/no-var-requires": 0,
+    "object-curly-spacing": 0,
+    "space-before-function-paren": 0,
+    "@typescript-eslint/no-explicit-any": 0,
   },
 };
