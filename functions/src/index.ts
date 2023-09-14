@@ -98,7 +98,7 @@ export const initiatestkpush = functions.https.onRequest(async (request, respons
         status: "Error",
         checkoutRequestId: "",
       };
-      Sentry.captureException(error,{level:'fatal'});
+      Sentry.captureException(error, {level: "fatal"});
       response.send(resp);
     }
   });
@@ -106,11 +106,11 @@ export const initiatestkpush = functions.https.onRequest(async (request, respons
 export const mpesaCallback = functions.https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     const transactions = Sentry.startTransaction({
-      name: 'mpesaCallback',
-      op: 'mpesaCallback'
-    })
+      name: "mpesaCallback",
+      op: "mpesaCallback",
+    });
     try {
-      
+      console.log(request.body);
       const data: IMpesacallback = request.body;
       if (data?.Body?.stkCallback?.ResultCode === 0) {
         const options = {
@@ -128,13 +128,13 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
-          }          
+          }
         });
-        transactions.finish()
+        transactions.finish();
       } else {
-        transactions.setHttpStatus(400)
-        transactions.setData('response',data?.Body?.stkCallback)
-        transactions.finish()
+        transactions.setHttpStatus(400);
+        transactions.setData("response", data?.Body?.stkCallback);
+        transactions.finish();
         Sentry.captureMessage(JSON.stringify(data?.Body?.stkCallback), "log");
         const options = {
           "method": "POST",
@@ -152,12 +152,12 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
-          }          
+          }
         });
       }
     } catch (error) {
-      Sentry.captureException(error,{level: 'fatal'});
-      transactions.setHttpStatus(500)
+      Sentry.captureException(error, {level: "fatal"});
+      transactions.setHttpStatus(500);
       const options = {
         "method": "POST",
         "url": "https://locatestudent.com/meet/api/api.php",
@@ -171,12 +171,14 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
       };
       httpRequest(options, function(error:any, response:any) {
         if (error) {
-          Sentry.captureException(error,{
-            level: 'error'
-          })
+          Sentry.captureException(error, {
+            level: "error",
+          });
           throw new Error(error);
         }
-        console.log(response.body);
+        if (response.body?.result == false) {
+          Sentry.captureException(request?.body);
+        }
       });
     }
   });
