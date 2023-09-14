@@ -8,6 +8,20 @@ import httpRequest from "request";
 
 /* eslist-disable */
 const cors = require("cors")({origin: true});
+// You can also use CommonJS `require('@sentry/node')` instead of `import`
+import * as Sentry from "@sentry/node";
+import { ProfilingIntegration } from "@sentry/profiling-node";
+
+Sentry.init({
+  dsn: 'https://d8fe0bb12056a5c0e78210df589f26b3@o4504167984136192.ingest.sentry.io/4505877489057792',
+  integrations: [
+    new ProfilingIntegration(),
+  ],
+  // Performance Monitoring
+  tracesSampleRate: 1.0, // Capture 100% of the transactions, reduce in production!
+  // Set sampling rate for profiling - this is relative to tracesSampleRate
+  profilesSampleRate: 1.0, // Capture 100% of the transactions, reduce in production!
+});
 /* eslist-disable */
 interface IMpesacallback {
   Body?: {
@@ -47,67 +61,98 @@ type StkResponse = {
 admin.initializeApp();
 export const initiatestkpush = functions.https.onRequest(async (request, response) => {
   cors(request, response, async () => {
-    const token = await getAuth();
-    const phone = request.body.phone;
-    const amount = request.body.amount;
-    const type = request.body.type;
-    if (type == "mpesa" || type === "card") {
-      if (amount && phone && type) {
-        const data: RequestBody = {
-          token: token,
-          phone: phone,
-          amount: amount,
-          type: type,
-
-        };
-        const resp: StkResponseBody = await initiatePush(data);
-        response.send(resp);
+    try {
+      const token = await getAuth();
+      const phone = request.body.phone;
+      const amount = request.body.amount;
+      const type = request.body.type;
+      if (type == "mpesa" || type === "card") {
+        if (amount && phone && type) {
+          const data: RequestBody = {
+            token: token,
+            phone: phone,
+            amount: amount,
+            type: type,
+  
+          };
+          const resp: StkResponseBody = await initiatePush(data);
+          response.send(resp);
+        } else {
+          const resp: StkResponseBody = {
+            message: "Failed either amount or phone Number missing",
+            status: "Error",
+            checkoutRequestId: "",
+          };
+          response.send(resp);
+        }
       } else {
         const resp: StkResponseBody = {
-          message: "Failed either amount or phone Number missing",
+          message: "Invalid Payment Method! Payment Method Can Only Be card or mpesa",
           status: "Error",
           checkoutRequestId: "",
         };
         response.send(resp);
       }
-    } else {
+    } catch (error) {
       const resp: StkResponseBody = {
         message: "Invalid Payment Method! Payment Method Can Only Be card or mpesa",
         status: "Error",
         checkoutRequestId: "",
-      };
-      response.send(resp);
+      }
+      Sentry.captureException(error)
+      response.send(resp)
     }
   });
 });
 export const mpesaCallback = functions.https.onRequest(async (request, response) => {
   cors(request, response, async () => {
-    const data: IMpesacallback = request.body;
-    if (data?.Body?.stkCallback?.ResultCode === 0) {
+    try {
+      const data: IMpesacallback = request.body;
+      if (data?.Body?.stkCallback?.ResultCode === 0) {
+        const options = {
+          "method": "POST",
+          "url": "https://locatestudent.com/meet/api/api.php",
+          "formData": {
+            "amount": parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
+            "checkoutRequestId": data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            "paymentStatus": "success",
+            "transId": data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
+            "date": new Date().toDateString(),
+          },
+        };
+        httpRequest(options, function(error:any, response:any) {
+          if (error) throw new Error(error);
+          console.log(response.body);
+        });
+      } else {
+        Sentry.captureMessage(JSON.stringify(data?.Body?.stkCallback),'log');
+        const options = {
+          "method": "POST",
+          "url": "https://locatestudent.com/meet/api/api.php",
+          "formData": {
+            "amount": parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
+            "checkoutRequestId": data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            "paymentStatus": "fail",
+            "transId": data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
+            "date": new Date().toDateString(),
+            "message": data?.Body?.stkCallback?.ResultDesc
+          },
+        };
+        httpRequest(options, function(error:any, response:any) {
+          if (error) throw new Error(error);
+          console.log(response.body);
+        });
+      }
+    } catch (error) {
+      Sentry.captureException(error)
       const options = {
         "method": "POST",
         "url": "https://locatestudent.com/meet/api/api.php",
         "formData": {
-          "amount": parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
-          "checkoutRequestId": data?.Body?.stkCallback?.CheckoutRequestID ?? "",
-          "paymentStatus": "success",
-          "transId": data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
-          "date": new Date().toDateString(),
-        },
-      };
-      httpRequest(options, function(error:any, response:any) {
-        if (error) throw new Error(error);
-        console.log(response.body);
-      });
-    } else {
-      const options = {
-        "method": "POST",
-        "url": "https://locatestudent.com/meet/api/api.php",
-        "formData": {
-          "amount": parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
-          "checkoutRequestId": data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+          "amount": 0,
+          "checkoutRequestId": "",
           "paymentStatus": "fail",
-          "transId": data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
+          "transId": "",
           "date": new Date().toDateString(),
         },
       };
@@ -180,7 +225,7 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
       return message;
     })
     .catch((error) => {
-      console.error(error);
+      Sentry.captureException(error)
       const message: StkResponseBody = {
         checkoutRequestId: "",
         message: "Error Please Check Your Phone Number And Try Again",
