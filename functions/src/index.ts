@@ -98,7 +98,7 @@ export const initiatestkpush = functions.https.onRequest(async (request, respons
         status: "Error",
         checkoutRequestId: "",
       };
-      Sentry.captureException(error);
+      Sentry.captureException(error,{level:'fatal'});
       response.send(resp);
     }
   });
@@ -149,7 +149,7 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
         });
       }
     } catch (error) {
-      Sentry.captureException(error);
+      Sentry.captureException(error,{level: 'fatal'});
       const options = {
         "method": "POST",
         "url": "https://locatestudent.com/meet/api/api.php",
@@ -162,7 +162,12 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
         },
       };
       httpRequest(options, function(error:any, response:any) {
-        if (error) throw new Error(error);
+        if (error) {
+          Sentry.captureException(error,{
+            level: 'error'
+          })
+          throw new Error(error);
+        }
         console.log(response.body);
       });
     }
