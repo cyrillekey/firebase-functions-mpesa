@@ -11,6 +11,7 @@ const cors = require("cors")({origin: true});
 // You can also use CommonJS `require('@sentry/node')` instead of `import`
 import * as Sentry from "@sentry/node";
 import {ProfilingIntegration} from "@sentry/profiling-node";
+import {PrismaClient} from "@prisma/client";
 
 Sentry.init({
   dsn: "https://d8fe0bb12056a5c0e78210df589f26b3@o4504167984136192.ingest.sentry.io/4505877489057792",
@@ -59,6 +60,7 @@ type StkResponse = {
   CustomerMessage: string | null | undefined;
 }
 admin.initializeApp();
+const prisma = new PrismaClient();
 export const initiatestkpush = functions.https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     try {
@@ -110,7 +112,6 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
       op: "mpesaCallback",
     });
     try {
-      console.log(request.body);
       const data: IMpesacallback = request.body;
       if (data?.Body?.stkCallback?.ResultCode === 0) {
         const options = {
@@ -124,12 +125,25 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
             "date": new Date().toDateString(),
           },
         };
-        httpRequest(options, function(error:any, response:any) {
+        httpRequest(options, async function(error:any, response:any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
           }
+          await prisma.mpesaTransaction.update({
+            where: {
+              checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            },
+            data: {
+              amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
+              dateCompleted: new Date(),
+              transactionId: data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
+              serverResponse: response?.toString(),
+              status: 'SUCCESS'
+            },
+          });
         });
+
         transactions.finish();
       } else {
         transactions.setHttpStatus(400);
@@ -148,11 +162,23 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
             "message": data?.Body?.stkCallback?.ResultDesc,
           },
         };
-        httpRequest(options, function(error:any, response:any) {
+        httpRequest(options, async function(error:any, response:any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
           }
+          await prisma.mpesaTransaction.update({
+            where: {
+              checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            },
+            data: {
+              amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
+              dateCompleted: new Date(),
+              transactionId: data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
+              serverResponse: response?.toString(),
+              status: 'FAILED'
+            },
+          });
         });
       }
     } catch (error) {
@@ -210,7 +236,6 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
     ResponseCode: undefined,
     CustomerMessage: undefined,
   };
-  console.log(data);
   const timestamp: string = moment().format("YYYYMMDDhhmmss").toString();
   const password: string = btoa(`${process.env.MPESA_SHORT_CODE}${process.env.PASSKEY}${timestamp}`);
   return await fetch("https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest", {
@@ -234,9 +259,17 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
     }),
   })
     .then((response) => response.json())
-    .then((result) => {
-      resp = result as StkResponse;
-      console.log(result);
+    .then(async (result : StkResponse) => {
+      resp = result;
+      await prisma.mpesaTransaction.create({
+        data: {
+          amount: parseInt(data.amount),
+          phone: formatPhoneNumber(data.phone).trim(),
+          amountCompleted: 0,
+          checkoutRequestId: resp.CheckoutRequestID ?? "",
+          serverResponse: "",
+        },
+      });
       const message: StkResponseBody = {
         checkoutRequestId: resp.CheckoutRequestID,
         message: resp?.CustomerMessage ?? "Error Please Try Again!",
