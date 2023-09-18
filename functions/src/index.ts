@@ -166,8 +166,10 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
           data: {
             amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
             dateCompleted: new Date(),
+            amountCompleted: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),            
             transactionId: data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
             status: "FAILED",
+            failureReason: data?.Body?.stkCallback?.ResultDesc
           },
         });
         const options = {
@@ -285,7 +287,7 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
           amountCompleted: 0,
           checkoutRequestId: resp.CheckoutRequestID ?? "",
           serverResponse: "",
-          userId: data.userId,
+          userId: data?.userId,
         },
       });
       const message: StkResponseBody = {
