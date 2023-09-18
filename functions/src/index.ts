@@ -11,6 +11,7 @@ const cors = require("cors")({ origin: true });
 // You can also use CommonJS `require('@sentry/node')` instead of `import`
 import * as Sentry from "@sentry/node";
 import { ProfilingIntegration } from "@sentry/profiling-node";
+import {PrismaClient} from "@prisma/client";
 
 Sentry.init({
   dsn: "https://d8fe0bb12056a5c0e78210df589f26b3@o4504167984136192.ingest.sentry.io/4505877489057792",
@@ -45,6 +46,7 @@ type RequestBody = {
   amount: string;
   token: string;
   type: "mpesa" | "card"
+  userId: string
 }
 type StkResponseBody = {
   status: string,
@@ -59,6 +61,7 @@ type StkResponse = {
   CustomerMessage: string | null | undefined;
 }
 admin.initializeApp();
+const prisma = new PrismaClient();
 export const initiatestkpush = functions.https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     try {
@@ -73,6 +76,7 @@ export const initiatestkpush = functions.https.onRequest(async (request, respons
             phone: phone,
             amount: amount,
             type: type,
+            userId: request?.body?.userId ?? "",
           };
           const resp: StkResponseBody = await initiatePush(data);
           response.send(resp);
@@ -110,9 +114,19 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
       op: "mpesaCallback",
     });
     try {
-      console.log(request.body);
       const data: IMpesacallback = request.body;
       if (data?.Body?.stkCallback?.ResultCode === 0) {
+        const newData = await prisma.mpesaTransaction.update({
+          where: {
+            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+          },
+          data: {
+            amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
+            dateCompleted: new Date(),
+            transactionId: data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
+            status: "SUCCESS",
+          },
+        });
         const options = {
           "method": "POST",
           "url": "https://locatestudent.com/meet/api/api.php",
@@ -122,20 +136,40 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
             "paymentStatus": "success",
             "transId": data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
             "date": new Date().toDateString(),
+            "userId": newData?.userId,
           },
         };
-        httpRequest(options, function (error: any, response: any) {
+        httpRequest(options, async function (error: any, response: any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
           }
+          await prisma.mpesaTransaction.update({
+            where: {
+              checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            },
+            data: {
+              serverResponse: JSON.stringify(response?.body ?? ""),
+            },
+          });
         });
+
         transactions.finish();
       } else {
         transactions.setHttpStatus(400);
         transactions.setData("response", data?.Body?.stkCallback);
         transactions.finish();
-        Sentry.captureMessage(JSON.stringify(data?.Body?.stkCallback), "log");
+        const newData = await prisma.mpesaTransaction.update({
+          where: {
+            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+          },
+          data: {
+            amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
+            dateCompleted: new Date(),
+            transactionId: data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
+            status: "FAILED",
+          },
+        });
         const options = {
           "method": "POST",
           "url": "https://locatestudent.com/meet/api/api.php",
@@ -146,13 +180,22 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
             "transId": data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
             "date": new Date().toDateString(),
             "message": data?.Body?.stkCallback?.ResultDesc,
+            "userId": newData?.userId,
           },
         };
-        httpRequest(options, function (error: any, response: any) {
+        httpRequest(options, async function (error: any, response: any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
           }
+          await prisma.mpesaTransaction.update({
+            where: {
+              checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            },
+            data: {
+              serverResponse: response?.toString(),
+            },
+          });
         });
       }
     } catch (error) {
@@ -203,68 +246,64 @@ const getAuth = async (): Promise<string> => {
     });
 };
 const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
-  try {
-    let resp: StkResponse = {
-      ResponseDescription: "",
-      MerchantRequestID: undefined,
-      CheckoutRequestID: undefined,
-      ResponseCode: undefined,
-      CustomerMessage: undefined,
-    };
-    const timestamp: string = moment().format("YYYYMMDDhhmmss").toString();
-    const password: string = btoa(`${process.env.MPESA_SHORT_CODE}${process.env.PASSKEY}${timestamp}`);
-    return await fetch("https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${data.token}`,
-      },
-      body: JSON.stringify({
-        "BusinessShortCode": Number(process.env.MPESA_SHORT_CODE),
-        "Password": password,
-        "Timestamp": timestamp,
-        "TransactionType": "CustomerBuyGoodsOnline",
-        "Amount": Number(data.amount),
-        "PartyA": parseInt(formatPhoneNumber(data.phone).trim()),
-        "PartyB": 9652927,
-        "PhoneNumber": parseInt(formatPhoneNumber(data.phone).trim()),
-        "CallBackURL": process.env.CALLBACK_URL,
-        "AccountReference": "CompanyXLTD",
-        "TransactionDesc": "Payment of X",
-      }),
-    })
-      .then((response) => response.json())
-      .then((result) => {
-        resp = result as StkResponse;
-        console.log(result);
-        const message: StkResponseBody = {
-          checkoutRequestId: resp.CheckoutRequestID,
-          message: resp?.CustomerMessage ?? "Error Please Try Again!",
-          status: resp.ResponseCode ?? "1",
-        };
-        return message;
-      })
-      .catch((error) => {
-        Sentry.captureException(error,{
-          level: 'error',
-          extra: data
-        });
-        const message: StkResponseBody = {
-          checkoutRequestId: "",
-          message: "Error Please Check Your Phone Number And Try Again",
-          status: "1",
-        };
-        return message;
+  let resp: StkResponse = {
+    ResponseDescription: "",
+    MerchantRequestID: undefined,
+    CheckoutRequestID: undefined,
+    ResponseCode: undefined,
+    CustomerMessage: undefined,
+  };
+  const timestamp: string = moment().format("YYYYMMDDhhmmss").toString();
+  const password: string = btoa(`${process.env.MPESA_SHORT_CODE}${process.env.PASSKEY}${timestamp}`);
+  return await fetch("https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${data.token}`,
+    },
+    body: JSON.stringify({
+      "BusinessShortCode": Number(process.env.MPESA_SHORT_CODE),
+      "Password": password,
+      "Timestamp": timestamp,
+      "TransactionType": "CustomerBuyGoodsOnline",
+      "Amount": Number(data.amount),
+      "PartyA": parseInt(formatPhoneNumber(data.phone).trim()),
+      "PartyB": 9652927,
+      "PhoneNumber": parseInt(formatPhoneNumber(data.phone).trim()),
+      "CallBackURL": process.env.CALLBACK_URL,
+      "AccountReference": "CompanyXLTD",
+      "TransactionDesc": "Payment of X",
+    }),
+  })
+    .then((response) => response.json())
+    .then(async (result : StkResponse) => {
+      resp = result;
+      await prisma.mpesaTransaction.create({
+        data: {
+          amount: parseInt(data.amount),
+          phone: formatPhoneNumber(data.phone).trim(),
+          amountCompleted: 0,
+          checkoutRequestId: resp.CheckoutRequestID ?? "",
+          serverResponse: "",
+          userId: data.userId,
+        },
       });
-  } catch (error) {
-    Sentry.captureException(error);
-    const message: StkResponseBody = {
-      checkoutRequestId: "",
-      message: "Error Please Check Your Phone Number And Try Again",
-      status: "1",
-    };
-    return message;
-  }
+      const message: StkResponseBody = {
+        checkoutRequestId: resp.CheckoutRequestID,
+        message: resp?.CustomerMessage ?? "Error Please Try Again!",
+        status: resp.ResponseCode ?? "1",
+      };
+      return message;
+    })
+    .catch((error) => {
+      Sentry.captureException(error);
+      const message: StkResponseBody = {
+        checkoutRequestId: "",
+        message: "Error Please Check Your Phone Number And Try Again",
+        status: "1",
+      };
+      return message;
+    });
 };
 
 const formatPhoneNumber = (phone = ""): string => {
