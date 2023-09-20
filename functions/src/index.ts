@@ -166,10 +166,10 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
           data: {
             amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
             dateCompleted: new Date(),
-            amountCompleted: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),            
+            amountCompleted: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
             transactionId: data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
             status: "FAILED",
-            failureReason: data?.Body?.stkCallback?.ResultDesc
+            failureReason: data?.Body?.stkCallback?.ResultDesc,
           },
         });
         const options = {
@@ -195,7 +195,7 @@ export const mpesaCallback = functions.https.onRequest(async (request, response)
               checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
             },
             data: {
-              serverResponse: response?.toString(),
+              serverResponse: JSON.stringify(response?.body ?? {}),
             },
           });
         });
