@@ -23,6 +23,7 @@ model MpesaTransaction {
   updatedAt DateTime  @updatedAt
   serverResponse    String
   status            PaymentStatus @default(PENDING)
+  userId            String?
 }
 
 enum PaymentStatus {

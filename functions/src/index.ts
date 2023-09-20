@@ -2,15 +2,15 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import fetch from "node-fetch";
-import axios, {AxiosResponse} from "axios";
+import axios, { AxiosResponse } from "axios";
 import moment from "moment";
 import httpRequest from "request";
 
 /* eslist-disable */
-const cors = require("cors")({origin: true});
+const cors = require("cors")({ origin: true });
 // You can also use CommonJS `require('@sentry/node')` instead of `import`
 import * as Sentry from "@sentry/node";
-import {ProfilingIntegration} from "@sentry/profiling-node";
+import { ProfilingIntegration } from "@sentry/profiling-node";
 import {PrismaClient} from "@prisma/client";
 
 Sentry.init({
@@ -46,6 +46,7 @@ type RequestBody = {
   amount: string;
   token: string;
   type: "mpesa" | "card"
+  userId: string
 }
 type StkResponseBody = {
   status: string,
@@ -75,6 +76,7 @@ export const initiatestkpush = functions.runWith({memory:'512MB', failurePolicy:
             phone: phone,
             amount: amount,
             type: type,
+            userId: request?.body?.userId ?? "",
           };
           const resp: StkResponseBody = await initiatePush(data);
           response.send(resp);
@@ -100,7 +102,7 @@ export const initiatestkpush = functions.runWith({memory:'512MB', failurePolicy:
         status: "Error",
         checkoutRequestId: "",
       };
-      Sentry.captureException(error, {level: "fatal"});
+      Sentry.captureException(error, { level: "fatal" });
       response.send(resp);
     }
   });
@@ -114,6 +116,17 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
     try {
       const data: IMpesacallback = request.body;
       if (data?.Body?.stkCallback?.ResultCode === 0) {
+        const newData = await prisma.mpesaTransaction.update({
+          where: {
+            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+          },
+          data: {
+            amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
+            dateCompleted: new Date(),
+            transactionId: data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
+            status: "SUCCESS",
+          },
+        });
         const options = {
           "method": "POST",
           "url": "https://locatestudent.com/meet/api/api.php",
@@ -123,6 +136,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
             "paymentStatus": "success",
             "transId": data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
             "date": new Date().toDateString(),
+            "userId": newData?.userId,
           },
         };
         await prisma.mpesaTransaction.update({
@@ -136,7 +150,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
             status: "SUCCESS",
           },
         });
-        httpRequest(options, async function(error: any, response: any) {
+        httpRequest(options, async function (error:  any, response:  any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
@@ -156,6 +170,19 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
         transactions.setHttpStatus(400);
         transactions.setData("response", data?.Body?.stkCallback);
         transactions.finish();
+        const newData = await prisma.mpesaTransaction.update({
+          where: {
+            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+          },
+          data: {
+            amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
+            dateCompleted: new Date(),
+            amountCompleted: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
+            transactionId: data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
+            status: "FAILED",
+            failureReason: data?.Body?.stkCallback?.ResultDesc,
+          },
+        });
         const options = {
           "method": "POST",
           "url": "https://locatestudent.com/meet/api/api.php",
@@ -166,6 +193,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
             "transId": data?.Body?.stkCallback?.CallbackMetadata?.Item[1].Value.toString() ?? "",
             "date": new Date().toDateString(),
             "message": data?.Body?.stkCallback?.ResultDesc,
+            "userId": newData?.userId,
           },
         };
         await prisma.mpesaTransaction.update({
@@ -180,7 +208,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
             failureReason: data?.Body?.stkCallback?.ResultDesc,
           },
         });
-        httpRequest(options, async function(error: any, response: any) {
+        httpRequest(options, async function (error:  any, response:  any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
@@ -196,7 +224,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
         });
       }
     } catch (error) {
-      Sentry.captureException(error, {level: "fatal"});
+      Sentry.captureException(error, { level: "fatal" });
       transactions.setHttpStatus(500);
       const options = {
         "method": "POST",
@@ -209,7 +237,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
           "date": new Date().toDateString(),
         },
       };
-      httpRequest(options, function(error: any, response: any) {
+      httpRequest(options, function (error:  any, response:  any) {
         if (error) {
           Sentry.captureException(error, {
             level: "error",
@@ -222,7 +250,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
       });
     }
   });
-  response.send({success: true});
+  response.send({ success: true });
 });
 const getAuth = async (): Promise<string> => {
   const token: string =
@@ -235,10 +263,10 @@ const getAuth = async (): Promise<string> => {
     },
   };
   return axios(config)
-    .then(function(result: AxiosResponse) {
+    .then(function (result: AxiosResponse) {
       return result.data["access_token"];
     })
-    .catch(function() {
+    .catch(function () {
       return "0";
     });
 };
@@ -283,6 +311,7 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
             amountCompleted: 0,
             checkoutRequestId: resp.CheckoutRequestID ?? "",
             serverResponse: "",
+          userId: data?.userId,
             status: "PENDING",
           },
         });
