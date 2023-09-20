@@ -61,7 +61,7 @@ type StkResponse = {
 }
 admin.initializeApp();
 const prisma = new PrismaClient();
-export const initiatestkpush = functions.https.onRequest(async (request, response) => {
+export const initiatestkpush = functions.runWith({memory:'512MB', failurePolicy: true,}).https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     try {
       const token = await getAuth();
