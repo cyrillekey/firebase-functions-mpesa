@@ -11,7 +11,7 @@ const cors = require("cors")({ origin: true });
 // You can also use CommonJS `require('@sentry/node')` instead of `import`
 import * as Sentry from "@sentry/node";
 import { ProfilingIntegration } from "@sentry/profiling-node";
-import {PrismaClient} from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 
 Sentry.init({
   dsn: "https://d8fe0bb12056a5c0e78210df589f26b3@o4504167984136192.ingest.sentry.io/4505877489057792",
@@ -33,7 +33,7 @@ interface IMpesacallback {
       ResultDesc?: string,
       CallbackMetadata?: {
         Item: Array<Item>
-      } | null | undefined
+      } | null | undefined,
     }
   }
 }
@@ -62,7 +62,7 @@ type StkResponse = {
 }
 admin.initializeApp();
 const prisma = new PrismaClient();
-export const initiatestkpush = functions.runWith({memory:'512MB', failurePolicy: true,}).https.onRequest(async (request, response) => {
+export const initiatestkpush = functions.runWith({ memory: "512MB", failurePolicy: true }).https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     try {
       const token = await getAuth();
@@ -107,7 +107,7 @@ export const initiatestkpush = functions.runWith({memory:'512MB', failurePolicy:
     }
   });
 });
-export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540}).https.onRequest(async (request, response) => {
+export const mpesaCallback = functions.runWith({ memory: "1GB", timeoutSeconds: 540 }).https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     const transactions = Sentry.startTransaction({
       name: "mpesaCallback",
@@ -116,9 +116,16 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
     try {
       const data: IMpesacallback = request.body;
       if (data?.Body?.stkCallback?.ResultCode === 0) {
+        const request = await prisma.mpesaTransaction.findFirst({
+          where: {
+            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID,
+            status: 'PENDING',
+            merchantRequestId: data?.Body?.stkCallback?.MerchantRequestID
+          }
+        })
         const newData = await prisma.mpesaTransaction.update({
           where: {
-            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            id: request?.id,
           },
           data: {
             amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
@@ -141,7 +148,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
         };
         await prisma.mpesaTransaction.update({
           where: {
-            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            id: request?.id,
           },
           data: {
             amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
@@ -150,14 +157,14 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
             status: "SUCCESS",
           },
         });
-        httpRequest(options, async function (error:  any, response:  any) {
+        httpRequest(options, async function (error: any, response: any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
           }
           await prisma.mpesaTransaction.update({
             where: {
-              checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+              id: request?.id
             },
             data: {
               serverResponse: JSON.stringify(response?.body ?? {}),
@@ -167,12 +174,19 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
 
         transactions.finish();
       } else {
+        const request = await prisma.mpesaTransaction.findFirst({
+          where: {
+            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID,
+            status: 'PENDING',
+            merchantRequestId: data?.Body?.stkCallback?.MerchantRequestID
+          }
+        })
         transactions.setHttpStatus(400);
         transactions.setData("response", data?.Body?.stkCallback);
         transactions.finish();
         const newData = await prisma.mpesaTransaction.update({
           where: {
-            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            id: request?.id,
           },
           data: {
             amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
@@ -198,7 +212,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
         };
         await prisma.mpesaTransaction.update({
           where: {
-            checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+            id: request?.id,
           },
           data: {
             amount: parseInt(data?.Body?.stkCallback?.CallbackMetadata?.Item[0]?.Value?.toString() ?? "0"),
@@ -208,14 +222,14 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
             failureReason: data?.Body?.stkCallback?.ResultDesc,
           },
         });
-        httpRequest(options, async function (error:  any, response:  any) {
+        httpRequest(options, async function (error: any, response: any) {
           if (error) {
             Sentry.captureException(error);
             throw new Error(error);
           }
           await prisma.mpesaTransaction.update({
             where: {
-              checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID ?? "",
+              id: request?.id,
             },
             data: {
               serverResponse: JSON.stringify(response?.body ?? {}),
@@ -237,7 +251,7 @@ export const mpesaCallback = functions.runWith({memory:'1GB',timeoutSeconds: 540
           "date": new Date().toDateString(),
         },
       };
-      httpRequest(options, function (error:  any, response:  any) {
+      httpRequest(options, function (error: any, response: any) {
         if (error) {
           Sentry.captureException(error, {
             level: "error",
@@ -311,8 +325,9 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
             amountCompleted: 0,
             checkoutRequestId: resp.CheckoutRequestID ?? "",
             serverResponse: "",
-          userId: data?.userId,
+            userId: data?.userId,
             status: "PENDING",
+            merchantRequestId: resp?.MerchantRequestID
           },
         });
         const message: StkResponseBody = {

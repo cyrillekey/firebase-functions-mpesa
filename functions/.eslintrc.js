@@ -33,5 +33,7 @@ module.exports = {
     "object-curly-spacing": 0,
     "space-before-function-paren": 0,
     "@typescript-eslint/no-explicit-any": 0,
+    "linebreak-style": 0,
+    "comma-dangle": 0,
   },
 };
