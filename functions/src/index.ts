@@ -62,7 +62,7 @@ type StkResponse = {
 }
 admin.initializeApp();
 const prisma = new PrismaClient();
-export const initiatestkpush = functions.runWith({ memory: "512MB", failurePolicy: true }).https.onRequest(async (request, response) => {
+export const initiatestkpush = functions.runWith({ memory: "2GB", }).https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     try {
       const token = await getAuth();
@@ -107,7 +107,7 @@ export const initiatestkpush = functions.runWith({ memory: "512MB", failurePolic
     }
   });
 });
-export const mpesaCallback = functions.runWith({ memory: "1GB", timeoutSeconds: 540 }).https.onRequest(async (request, response) => {
+export const mpesaCallback = functions.runWith({ memory: "4GB", timeoutSeconds: 540 }).https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     const transactions = Sentry.startTransaction({
       name: "mpesaCallback",
@@ -318,18 +318,20 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
       .then((response) => response.json())
       .then(async (result: StkResponse) => {
         resp = result;
-        await prisma.mpesaTransaction.create({
-          data: {
-            amount: parseInt(data.amount),
-            phone: formatPhoneNumber(data.phone).trim(),
-            amountCompleted: 0,
-            checkoutRequestId: resp.CheckoutRequestID ?? "",
-            serverResponse: "",
-            userId: data?.userId,
-            status: "PENDING",
-            merchantRequestId: resp?.MerchantRequestID
-          },
-        });
+        if (resp?.ResponseCode?.toString() == "0") {
+          await prisma.mpesaTransaction.create({
+            data: {
+              amount: parseInt(data.amount),
+              phone: formatPhoneNumber(data.phone).trim(),
+              amountCompleted: 0,
+              checkoutRequestId: resp.CheckoutRequestID ?? "",
+              serverResponse: "",
+              userId: data?.userId,
+              status: "PENDING",
+              merchantRequestId: resp?.MerchantRequestID
+            },
+          });
+        }
         const message: StkResponseBody = {
           checkoutRequestId: resp.CheckoutRequestID,
           message: resp?.CustomerMessage ?? "Error Please Try Again!",
