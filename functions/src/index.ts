@@ -107,7 +107,7 @@ export const initiatestkpush = functions.runWith({ memory: "512MB", failurePolic
     }
   });
 });
-export const mpesaCallback = functions.runWith({ memory: "1GB", timeoutSeconds: 540 }).https.onRequest(async (request, response) => {
+export const mpesaCallback = functions.runWith({ memory: "2GB", timeoutSeconds: 540 }).https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     const transactions = Sentry.startTransaction({
       name: "mpesaCallback",
@@ -119,10 +119,10 @@ export const mpesaCallback = functions.runWith({ memory: "1GB", timeoutSeconds: 
         const request = await prisma.mpesaTransaction.findFirst({
           where: {
             checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID,
-            status: 'PENDING',
-            merchantRequestId: data?.Body?.stkCallback?.MerchantRequestID
+            status: "PENDING",
+            merchantRequestId: data?.Body?.stkCallback?.MerchantRequestID,
           }
-        })
+        });
         const newData = await prisma.mpesaTransaction.update({
           where: {
             id: request?.id,
@@ -177,10 +177,10 @@ export const mpesaCallback = functions.runWith({ memory: "1GB", timeoutSeconds: 
         const request = await prisma.mpesaTransaction.findFirst({
           where: {
             checkoutRequestId: data?.Body?.stkCallback?.CheckoutRequestID,
-            status: 'PENDING',
-            merchantRequestId: data?.Body?.stkCallback?.MerchantRequestID
+            status: "PENDING",
+            merchantRequestId: data?.Body?.stkCallback?.MerchantRequestID,
           }
-        })
+        });
         transactions.setHttpStatus(400);
         transactions.setData("response", data?.Body?.stkCallback);
         transactions.finish();
@@ -318,6 +318,7 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
       .then((response) => response.json())
       .then(async (result: StkResponse) => {
         resp = result;
+        if (resp?.ResponseCode == "0")
         await prisma.mpesaTransaction.create({
           data: {
             amount: parseInt(data.amount),
@@ -327,7 +328,7 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
             serverResponse: "",
             userId: data?.userId,
             status: "PENDING",
-            merchantRequestId: resp?.MerchantRequestID
+            merchantRequestId: resp?.MerchantRequestID ?? ""
           },
         });
         const message: StkResponseBody = {
