@@ -62,7 +62,7 @@ type StkResponse = {
 }
 admin.initializeApp();
 const prisma = new PrismaClient();
-export const initiatestkpush = functions.runWith({ memory: "512MB", failurePolicy: true }).https.onRequest(async (request, response) => {
+export const initiatestkpush = functions.runWith({ memory: "2GB", }).https.onRequest(async (request, response) => {
   cors(request, response, async () => {
     try {
       const token = await getAuth();
@@ -318,19 +318,21 @@ const initiatePush = async (data: RequestBody): Promise<StkResponseBody> => {
       .then((response) => response.json())
       .then(async (result: StkResponse) => {
         resp = result;
-        if (resp?.ResponseCode == "0")
+        if (resp?.ResponseCode?.toString() == "0") {
+          if (resp?.ResponseCode == "0")
         await prisma.mpesaTransaction.create({
-          data: {
-            amount: parseInt(data.amount),
-            phone: formatPhoneNumber(data.phone).trim(),
-            amountCompleted: 0,
-            checkoutRequestId: resp.CheckoutRequestID ?? "",
-            serverResponse: "",
-            userId: data?.userId,
-            status: "PENDING",
-            merchantRequestId: resp?.MerchantRequestID ?? ""
-          },
-        });
+            data: {
+              amount: parseInt(data.amount),
+              phone: formatPhoneNumber(data.phone).trim(),
+              amountCompleted: 0,
+              checkoutRequestId: resp.CheckoutRequestID ?? "",
+              serverResponse: "",
+              userId: data?.userId,
+              status: "PENDING",
+              merchantRequestId: resp?.MerchantRequestID ?? ""
+            },
+          });
+        }
         const message: StkResponseBody = {
           checkoutRequestId: resp.CheckoutRequestID,
           message: resp?.CustomerMessage ?? "Error Please Try Again!",
